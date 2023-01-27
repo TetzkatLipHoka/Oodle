@@ -1,7 +1,7 @@
 unit Oodle;
 
 {
-  Oodle Oodle implementation
+  Oodle implementation
 
   TetzkatLipHoka - 2023
 }
