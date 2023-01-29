@@ -176,7 +176,7 @@ function ExtractStreamOodle( Source : TStream; DeCompressed : TStream ) : Int64;
 function ExtractStreamOodle( var Source : TStream ) : Int64; overload;
 
 {$IFDEF TESTCASE}
-function TestOodle( FileName : string; Header : boolean = False; SaveDebugFiles : Boolean = False ) : Int64;
+function TestOodle( FileName : string; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False; SaveDebugFiles : Boolean = False ) : Int64;
 {$ENDIF TESTCASE}
 
 {$WARNINGS ON}
