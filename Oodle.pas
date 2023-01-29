@@ -77,6 +77,11 @@ const
 {$UNDEF section_Declaration}
 
 type
+{$IF CompilerVersion < 23}
+  NativeUInt = Cardinal;
+  PNativeUInt = ^NativeUInt;
+{$IFEND}
+
   Toodle_NoAssert = function( const a : PAnsiChar; const b : Integer; const c : PAnsiChar; const d : PAnsiChar ) : Integer; stdcall;
 
   TOodleAlgo = (
@@ -97,6 +102,19 @@ type
     oaLZQ1        = 8, // old name of Kraken
     oaLZNIB2      = 9  // old name of Mermaid
   );
+  
+  TOodleCompressionLevel  = (
+    olNone      = 0,
+    olSuperFast = 1,
+    olVeryFast  = 2,
+    olFast      = 3, 
+    olNormal    = 4,
+    olOptimal1  = 5,
+    olOptimal2  = 6,
+    olOptimal3  = 7,
+    olOptimal4  = 8,
+    olOptimal5  = 9  
+  );  
 
 const
   OodleAlgoName : Array [ oaLZH..oaAkkorokamui ] of AnsiString = (
@@ -135,24 +153,24 @@ const
   );
 
 var
-  OodleLZ_Compress : function( Algo : Integer; Source : PByte; Size : Integer; Destination : PByte; DestSize : Integer; A : Pointer = nil; B : Pointer = nil; C : Pointer = nil ) : Integer; stdcall = NIL;
-  OodleLZ_Decompress : function( Source : PByte; Size : Integer; Destination : PByte; DestSize : Integer; A : Integer; B : Integer; C : Integer; D : Pointer = nil; E : Pointer = nil; F : Pointer = nil; G : Pointer = nil; H : Pointer = nil; I : Pointer = nil; J : Integer = 0 ) : Integer; stdcall = NIL; // Oodle 2.3.0
+  OodleLZ_Compress : function( Algo : Cardinal; Source : PByte; Size : NativeUInt; Destination : PByte; CompressionLevel : Cardinal; A : Pointer = nil; B : Pointer = nil; C : Pointer = nil ) : Integer; stdcall = NIL;
+  OodleLZ_Decompress : function( Source : PByte; Size : NativeUInt; Destination : PByte; DestSize : NativeUInt; A : Integer; B : Integer; C : Integer; D : Pointer = nil; E : Pointer = nil; F : Pointer = nil; G : Pointer = nil; H : Pointer = nil; I : Pointer = nil; ThreadModule : Integer = 3 ) : Integer; stdcall = NIL; // Oodle 2.3.0
   OodlePlugins_SetAssertion : procedure( func : Toodle_NoAssert ); stdcall = NIL;
 
 function OodlePlugins_NoAssert : Integer; stdcall;
 
 //~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : TByteDynArray; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64; overload;
+function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : TByteDynArray; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64; overload;
 {$IFNDEF Win64}
-function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : Pointer; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64; overload;
+function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : Pointer; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64; overload;
 {$ENDIF}
 function ExtractOodle( Source : PByte; Len : Cardinal; var Decompressed : TByteDynArray ) : Int64; overload;
 {$IFNDEF Win64}
 function ExtractOodle( Source : PByte; Len : Cardinal; var Decompressed : Pointer ) : Int64; overload;
 {$ENDIF}
 
-function CompressStreamOodle( Source : TStream; Compressed : TStream; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64; overload;
-function CompressStreamOodle( var Source : TStream; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64; overload;
+function CompressStreamOodle( Source : TStream; Compressed : TStream; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64; overload;
+function CompressStreamOodle( var Source : TStream; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64; overload;
 
 function ExtractStreamOodle( Source : TStream; DeCompressed : TStream ) : Int64; overload;
 function ExtractStreamOodle( var Source : TStream ) : Int64; overload;
@@ -235,9 +253,10 @@ type
   tHeader = Array [ 0..HEADER_LEN_-1 ] of AnsiChar;
   pHeader = ^tHeader;
 
-function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : TByteDynArray; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64;
+function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : TByteDynArray; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64;
 var
   Offset : Cardinal;
+  tLen   : Cardinal;
 begin
   result := -102;
   if NOT Oodle.IsInitDLL then
@@ -256,7 +275,10 @@ begin
     Offset := HEADER_LEN_+SizeOf( Len )
   else
     Offset := SizeOf( Len );
-  SetLength( Compressed, Offset+Len );
+    
+  // GetCompressionBound
+  tLen := Trunc( Len + 274 * ( ( Len + $3FFFF ) / $40000 ) );
+  SetLength( Compressed, Offset+tLen );
 
   if Header then
     begin
@@ -266,7 +288,7 @@ begin
   else
     Move( Len, Compressed[ 0 ], SizeOf( Len ) );
 
-  result := OodleLZ_Compress( Integer( Algo ), Source, Len, @Compressed[ Offset ], 7{Rate/Max}, nil, nil, nil );
+  result := OodleLZ_Compress( Cardinal( Algo ), Source, Len, @Compressed[ Offset ], Cardinal( CompressionLevel ), nil, nil, nil );
   if ( result > 0 ) then
     begin
     Result := Offset+result;
@@ -277,10 +299,11 @@ begin
 end;
 
 {$IFNDEF Win64}
-function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : Pointer; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64;
+function CompressOodle( Source : PByte; Len : Cardinal; var Compressed : Pointer; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64;
 var
   bCompressed : PByte;
   Offset : Cardinal;
+  tLen   : Cardinal;  
 begin
   result := -102;
   if NOT Oodle.IsInitDLL then
@@ -300,7 +323,10 @@ begin
     Offset := HEADER_LEN_+SizeOf( Len )
   else
     Offset := SizeOf( Len );
-  ReallocMem( Compressed, Offset+Len );
+
+  // GetCompressionBound    
+  tLen := Trunc( Len + 274 * ( ( Len + $3FFFF ) / $40000 ) );    
+  ReallocMem( Compressed, Offset+tLen );
 
   bCompressed := Compressed;
   if Header then
@@ -311,7 +337,7 @@ begin
   Move( Len, bCompressed^, SizeOf( Len ) );
   Inc( bCompressed, SizeOf( Len ) );
 
-  result := OodleLZ_Compress( Integer( Algo ), Source, Len, bCompressed, 7{Rate/Max}, nil, nil, nil );
+  result := OodleLZ_Compress( Cardinal( Algo ), Source, Len, bCompressed, Cardinal( CompressionLevel ), nil, nil, nil );
   if ( result > 0 ) then
     begin
     Result := Offset+result;
@@ -322,14 +348,14 @@ begin
 end;
 {$ENDIF}
 
-function CompressStreamOodle( Source : TStream; Compressed : TStream; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64;
+function CompressStreamOodle( Source : TStream; Compressed : TStream; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64;
 var
   S : TMemoryStream;
   tmp : TByteDynArray;
 begin
   if ( Source = Compressed ) then
     begin
-    result := CompressStreamOodle( Source, Algo, Header );
+    result := CompressStreamOodle( Source, Algo, CompressionLevel, Header );
     Exit;
     end;
 
@@ -350,7 +376,7 @@ begin
   S.Position := 0;
 
   SetLength( tmp, S.Size );
-  Result := CompressOodle( S.Memory, S.Size, tmp, Algo, Header );
+  Result := CompressOodle( S.Memory, S.Size, tmp, Algo, CompressionLevel, Header );
 
   if ( result > 0 ) then
     begin
@@ -365,7 +391,7 @@ begin
   S.Free;
 end;
 
-function CompressStreamOodle( var Source : TStream; Algo : TOodleAlgo = oaBitKnit; Header : boolean = False ) : Int64;
+function CompressStreamOodle( var Source : TStream; Algo : TOodleAlgo = oaLZNA; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False ) : Int64;
 var
   S : TMemoryStream;
   tmp : TByteDynArray;
@@ -383,7 +409,7 @@ begin
   S.Position := 0;
 
   SetLength( tmp, S.Size );
-  Result := CompressOodle( S.Memory, S.Size, tmp, Algo, Header );
+  Result := CompressOodle( S.Memory, S.Size, tmp, Algo, CompressionLevel, Header );
 
   if ( result > 0 ) then
     begin
@@ -499,6 +525,11 @@ begin
   Dec( Len, SizeOf( OutSize ) );
 
 //  OutSize := Len*4;
+  // GetDecompressionBound
+//  OutSize := Trunc( bufferSize + 16731 + 2 * ( Len + $3FFFF ) / $40000 );  
+//  if ( OutSize < Len + 272 ) then
+//    OutSize := Len + 272;
+
   SetLength( Decompressed, OutSize );
 
   result := OodleLZ_Decompress( Source, Len, @Decompressed[ 0 ], OutSize, 0, 0, 0, nil, nil, nil, nil, nil, nil, 3 );
@@ -537,6 +568,11 @@ begin
   Dec( Len, SizeOf( OutSize ) );
 
 //  OutSize := Len*4;
+  // GetDecompressionBound
+//  OutSize := Trunc( bufferSize + 16731 + 2 * ( Len + $3FFFF ) / $40000 );  
+//  if ( OutSize < Len + 272 ) then
+//    OutSize := Len + 272;
+
   GetMem( Decompressed, OutSize );
 
   result := OodleLZ_Decompress( Source, Len, Decompressed, OutSize, 0, 0, 0, nil, nil, nil, nil, nil, nil, 3 );
@@ -552,7 +588,7 @@ end;
 
 // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 {$IFDEF TESTCASE}
-function TestOodle( FileName : string; Header : boolean = False; SaveDebugFiles : Boolean = False ) : Int64;
+function TestOodle( FileName : string; CompressionLevel : TOodleCompressionLevel = olOptimal3; Header : boolean = False; SaveDebugFiles : Boolean = False ) : Int64;
 var
   sIn : TMemoryStream;
 
@@ -564,7 +600,7 @@ var
     SetLength( aDecompressed, 0 );
 
     sCompress := TMemoryStream.Create;
-    result := CompressOodle( sIn.Memory, sIn.Size, aDecompressed, Algo, Header );
+    result := CompressOodle( sIn.Memory, sIn.Size, aDecompressed, Algo, CompressionLevel, Header );
     if ( result <= 0 ) then
       begin
       sCompress.free;
@@ -609,7 +645,7 @@ var
     pDecompressed := nil;
 
     sCompress := TMemoryStream.Create;
-    result := CompressOodle( sIn.Memory, sIn.Size, pDecompressed, Algo, Header );
+    result := CompressOodle( sIn.Memory, sIn.Size, pDecompressed, Algo, CompressionLevel, Header );
     if ( result <= 0 ) then
       begin
       sCompress.free;
